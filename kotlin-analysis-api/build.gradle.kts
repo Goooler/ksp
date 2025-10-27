@@ -154,8 +154,13 @@ repositories {
     maven("https://packages.jetbrains.team/maven/p/ij/intellij-dependencies")
 }
 
-tasks.withType<org.gradle.jvm.tasks.Jar> {
-    archiveClassifier.set("real")
+shadow {
+    addShadowVariantIntoJavaComponent = false
+}
+
+tasks.jar {
+    // We don't need the plain jar.
+    enabled = false
 }
 
 tasks.withType<ShadowJar>().configureEach {
@@ -165,7 +170,13 @@ tasks.withType<ShadowJar>().configureEach {
     exclude("kotlin/**")
     exclude("kotlinx/coroutines/**")
     archiveClassifier.set("")
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    failOnDuplicateEntries = true
     mergeServiceFiles()
+    // Override duplicate handling for merging service files.
+    filesMatching("META-INF/services/**") {
+        duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    }
 }
 
 abstract class ValidateShadowJar : DefaultTask() {

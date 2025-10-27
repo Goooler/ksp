@@ -1,10 +1,10 @@
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowCopyAction.Companion.CONSTANT_TIME_FOR_ZIP_ENTRIES
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
-import com.github.jengelman.gradle.plugins.shadow.transformers.Transformer
+import com.github.jengelman.gradle.plugins.shadow.transformers.ResourceTransformer
 import com.github.jengelman.gradle.plugins.shadow.transformers.TransformerContext
 import org.apache.tools.zip.ZipEntry
 import org.apache.tools.zip.ZipOutputStream
 import org.gradle.jvm.tasks.Jar
-import java.io.InputStreamReader
 import java.util.zip.ZipFile
 
 evaluationDependsOn(":kotlin-analysis-api")
@@ -30,8 +30,13 @@ dependencies {
     packedJars(project(":kotlin-analysis-api", "shadow")) { isTransitive = false }
 }
 
-tasks.withType(Jar::class.java).configureEach {
-    archiveClassifier.set("real")
+shadow {
+    addShadowVariantIntoJavaComponent = false
+}
+
+tasks.jar {
+    // We don't need the plain jar.
+    enabled = false
 }
 
 val prefixesToRelocate = listOf(
@@ -68,7 +73,7 @@ val prefixesToRelocate = listOf(
     Pair(it, "ksp." + it)
 }
 
-class AAServiceTransformer : Transformer {
+class AAServiceTransformer : ResourceTransformer {
     private val entries = HashMap<String, String>()
 
     // Names of extension points needs to be relocated, because ShadowJar does that, too.
@@ -90,7 +95,7 @@ class AAServiceTransformer : Transformer {
     override fun modifyOutputStream(os: ZipOutputStream, preserveFileTimestamps: Boolean) {
         fun putOneEntry(path: String, content: String) {
             val entry = ZipEntry(path)
-            entry.time = TransformerContext.getEntryTimestamp(preserveFileTimestamps, entry.time)
+            entry.time = if (preserveFileTimestamps) entry.time else CONSTANT_TIME_FOR_ZIP_ENTRIES
             os.putNextEntry(entry)
             os.write(content.toByteArray())
             os.closeEntry()
@@ -120,7 +125,7 @@ class AAServiceTransformer : Transformer {
 
     override fun transform(context: TransformerContext) {
         val path = context.path
-        val content = InputStreamReader(context.`is`).readText()
+        val content = context.inputStream.reader().readText()
         entries[path] = content
     }
 }
@@ -136,7 +141,19 @@ tasks.withType(ShadowJar::class.java).configureEach {
             exclude("com.intellij.projectService")
         }
     }
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    failOnDuplicateEntries = true
     mergeServiceFiles()
+    // Override duplicate handling for merging service files.
+    filesMatching(
+        listOf(
+            "META-INF/services/**",
+            "META-INF/analysis-api/",
+            "META-INF/extensions/compiler.xml",
+        )
+    ) {
+        duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    }
     exclude("META-INF/compiler.version")
     exclude("META-INF/*.kotlin_module")
 
